@@ -1,86 +1,248 @@
-# BookNook — runnable full-stack project
+# BookNook Server
 
-Next.js App Router / TypeScript / DaisyUI client, Express / TypeScript / MongoDB API, and BetterAuth with the MongoDB adapter and signed JWTs. This archive includes the updated client so both sides run together.
+BookNook’s backend manages an online library where users can add books, borrow available copies, and return them.
 
-## Quick start
+Built with **Express.js, TypeScript, MongoDB, BetterAuth’s MongoDB adapter, and JWT authorization**.
 
-Install **Node.js 22.12+** and **Docker Desktop**. Extract this archive and run these commands from the `booknook-fullstack` root folder:
+## Author
 
-```sh
+- **Name:** Md. Faruk Ahmed
+- **GitHub:** [srfarukahmed](https://github.com/srfarukahmed)
+- **Server Repository:** [booknook-server](https://github.com/srfarukahmed/booknook-server)
+
+## Features
+
+- Eight book and borrowing API endpoints.
+- MongoDB persistence with validated request data.
+- Owner-only book updates and deletion.
+- JWT signature, issuer, audience, and expiration validation.
+- Live session checks that revoke access after logout.
+- Transactional borrowing and returns with atomic copy updates.
+- Prevention of duplicate borrowing and unavailable-copy borrowing.
+- Automatic borrow timestamps and fourteen-day return dates.
+- Protection against deleting books with active loans.
+- Consistent JSON errors, CORS configuration, and rate limiting.
+
+## Technology Stack
+
+| Technology | Purpose |
+| --- | --- |
+| Express.js | Library REST API |
+| TypeScript | Typed backend implementation |
+| MongoDB | Books, borrows, users, and sessions |
+| BetterAuth | Authentication and session management |
+| MongoDB Adapter | BetterAuth database integration |
+| JWT / JOSE | Token generation and verification |
+| Zod | Request and environment validation |
+
+## Authentication Architecture
+
+BetterAuth authentication endpoints run inside Next.js at `/api/auth/[...all]`.
+
+The Express API validates JWTs using BetterAuth’s JWKS endpoint. It also checks the current database session and user before allowing protected operations.
+
+JWTs expire after fifteen minutes. Sessions last seven days.
+
+## Folder Structure
+
+The supplied project uses this integrated structure:
+
+```text
+booknook-fullstack/
+
+├── server/
+│   ├── src/
+│   │   ├── fixtures/
+│   │   │   ├── data.ts
+│   │   │   └── types.ts
+│   │   ├── app.ts
+│   │   ├── auth.ts
+│   │   ├── database.ts
+│   │   ├── errors.ts
+│   │   ├── index.ts
+│   │   ├── models.ts
+│   │   ├── routes.ts
+│   │   ├── seed.ts
+│   │   └── validation.ts
+│   ├── test/
+│   │   └── integration.test.ts
+│   ├── package.json
+│   └── tsconfig.json
+├── scripts/
+│   └── setup.mjs
+├── docs/
+│   ├── API.md
+│   ├── REQUIREMENTS.md
+│   └── VERIFICATION.md
+├── .env.example
+├── .gitignore
+├── compose.yaml
+├── package.json
+├── package-lock.json
+└── README.md
+```
+
+## Requirements
+
+- Node.js 22.12 or newer.
+- MongoDB Atlas or a MongoDB replica set.
+- Docker Desktop only when using the provided local database configuration.
+
+A standalone MongoDB server is unsupported because borrowing and returns require transactions.
+
+## Installation
+
+Run these commands from the integrated project root:
+
+```bash
 npm ci
 npm run setup
+```
+
+The setup command creates `.env` with a random authentication secret.
+
+Configure your MongoDB Atlas connection and application origins before continuing.
+
+## Environment Variables
+
+```dotenv
+MONGODB_URI=YOUR_MONGODB_ATLAS_CONNECTION_STRING
+MONGODB_DB=booknook
+
+BETTER_AUTH_URL=http://localhost:3005
+BETTER_AUTH_SECRET=YOUR_GENERATED_SECRET
+JWT_AUDIENCE=booknook-api
+
+CLIENT_ORIGIN=http://localhost:3005
+PORT=5000
+
+NEXT_PUBLIC_DEMO_MODE=false
+NEXT_PUBLIC_AUTH_URL=http://localhost:3005
+NEXT_PUBLIC_API_URL=http://localhost:5000
+
+NEXT_PUBLIC_IMGBB_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+```
+
+Keep your generated authentication secret unchanged when connecting to an existing BookNook database.
+
+The client port in `package.json` must match the configured frontend origin. Never commit `.env` or private credentials.
+
+## Run with MongoDB Atlas
+
+Add your current IP address to Atlas Network Access and configure your database connection.
+
+Then run:
+
+```bash
+npm run seed
+npm run dev
+```
+
+The integrated development command starts both the client and Express API.
+
+- **Client:** http://localhost:3005
+- **API:** http://localhost:5000
+- **Health Check:** http://localhost:5000/health
+
+The client URL above assumes its port has been configured as 3005.
+
+## Local MongoDB Alternative
+
+With Docker Desktop running:
+
+```bash
 npm run db:up
 npm run seed
 npm run dev
 ```
 
-Open **http://localhost:3000**. API: **http://localhost:5000**. Readiness: http://localhost:5000/health.
+Stop the local database with:
 
-`setup` creates `.env` with a random secret and preserves existing configuration. `db:up` starts MongoDB 8 as a single-node replica set and waits until healthy. The database uses a persistent Docker volume. Application processes run on your host.
+```bash
+npm run db:down
+```
 
-**Atlas alternative:** skip `db:up`; set `MONGODB_URI` and `MONGODB_DB` in `.env`, allow your IP in Atlas, then seed/start. A replica set or Atlas cluster is required for transactions. Standalone MongoDB is rejected at startup.
+The Docker volume preserves database data.
 
-After seeding, log in using **reader@booknook.demo / Reader123**, or register an account. This is a real MongoDB-backed BetterAuth account. Seed adds nine fictional books and never resets existing passwords, book edits, or borrows. Optional `SEED_EMAIL` and `SEED_PASSWORD` customize the initial account. Production seeding is blocked unless `ALLOW_PRODUCTION_SEED=true` is explicitly set.
+## API Endpoints
 
-## Build and start
+Protected endpoints require:
 
-```sh
+```http
+Authorization: Bearer YOUR_JWT_TOKEN
+```
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| GET | `/books` | Public |
+| GET | `/books/:id` | Authenticated |
+| POST | `/books` | Authenticated |
+| PATCH | `/books/:id` | Book owner |
+| DELETE | `/books/:id` | Book owner |
+| POST | `/borrows` | Authenticated |
+| GET | `/borrows` | Current user's records |
+| DELETE | `/borrows/:id` | Borrow owner |
+
+Additional query options:
+
+```text
+/books?sort=newest&limit=6
+/books?sort=title
+/books?mine=true
+```
+
+The `mine=true` option requires authentication.
+
+## Borrowing Rules
+
+- A book must have an available copy.
+- A user cannot hold two active loans for the same book.
+- Borrowing decreases available copies by one.
+- Returning increases available copies by one.
+- Duplicate return requests cannot restore copies twice.
+- Books with active loans cannot be deleted.
+- Total copies cannot be reduced below the number currently borrowed.
+
+Inventory changes and borrow records are committed together using MongoDB transactions.
+
+## Seed Account
+
+After successful seeding:
+
+```text
+Email: reader@booknook.demo
+Password: Reader123
+```
+
+Seeding creates nine sample books and preserves existing records and passwords.
+
+## Production Build
+
+From the integrated project root:
+
+```bash
 npm run build
 npm start
 ```
 
-Build compiles shared auth, the Express TypeScript server, and Next.js. Start launches both production processes. Set public URLs before building. A running MongoDB replica set is required for API startup. Run all npm commands from this root; one installation/lockfile manages dependencies without symlinks or workspace tooling.
-
-## Features
-
-- Eight required book/borrow endpoints with validation and JSON errors.
-- Owner-only CRUD; server-derived identities, timestamps and borrow metadata.
-- Transactional `$inc` copy accounting, unique active-loan constraint, duplicate/last-copy protection.
-- Returns restore one copy; copy edits preserve active loans; active loans block deletion.
-- BetterAuth hosted in Next.js with MongoDB persistence and optional Google OAuth.
-- Express checks EdDSA JWT signatures, issuer, audience, expiry and current database sessions.
-- Signing out revokes access for previously issued tokens immediately.
-- Existing responsive client, private pages, toasts, themes, Swiper and image uploads.
-- Six newest arrivals fetched using MongoDB sort and limit.
-
-## Environment and services
-
-Root scripts load root `.env` into both processes. See `.env.example`; never commit `.env`.
-
-| Variable                                   | Purpose                                           |
-| ------------------------------------------ | ------------------------------------------------- |
-| `MONGODB_URI`, `MONGODB_DB`                | Replica-set connection and database               |
-| `BETTER_AUTH_URL`                          | Next.js origin, normally http://localhost:3000    |
-| `BETTER_AUTH_SECRET`                       | Random server-only secret, at least 32 characters |
-| `JWT_AUDIENCE`                             | Matching auth/API audience, default booknook-api  |
-| `CLIENT_ORIGIN`                            | Exact frontend CORS/trusted origin                |
-| `PORT`                                     | Express port, default 5000                        |
-| `NEXT_PUBLIC_DEMO_MODE`                    | false for real auth/database mode                 |
-| `NEXT_PUBLIC_AUTH_URL`                     | Same Next.js origin as BETTER_AUTH_URL            |
-| `NEXT_PUBLIC_API_URL`                      | Browser-accessible Express origin                 |
-| `NEXT_PUBLIC_IMGBB_KEY`                    | Optional public imgbb upload key                  |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional Google credentials, both or neither      |
-
-Google OAuth Web client: authorized origin `http://localhost:3000`, redirect URI **http://localhost:3000/api/auth/callback/google**. Set both credentials and restart. Configure equivalent HTTPS URLs in production. Email/password auth works without Google.
-
-Set the imgbb key before starting/building to upload covers, or enter an HTTP(S) image URL without a key. Real API records store URLs and reject base64 blobs. Never place private database/auth/Google secrets in public environment variables.
-
-Password rules are enforced in the client and server: minimum six characters, uppercase and lowercase. Registration returns to Login. Email verification and password recovery stay disabled as requested.
+Configure deployment URLs before building. Use HTTPS and an authenticated database for production.
 
 ## Tests
 
-```sh
+```bash
 npm test
 ```
 
-Tests use a real disposable MongoDB replica set, real BetterAuth sessions, and signed JWTs; they never use your configured database. First run downloads a MongoDB test binary to `.cache/mongodb` and requires Internet access/disk space. Later runs use the cache. The temporary replica set and HTTP servers stop at completion. See `docs/VERIFICATION.md` for performed checks.
+The integration suite uses a disposable MongoDB replica set, actual BetterAuth sessions, and signed JWTs.
 
-## Structure
+It checks authentication, ownership, CRUD, validation, borrowing, concurrent inventory changes, returns, logout revocation, and repeatable seeding.
 
-`client/` contains Next.js and its `/api/auth/[...all]` Node route. `packages/auth/src/` contains shared server-only auth/MongoDB configuration. `server/src/` contains Express routes, JWT guard, validation and seed. `server/test/` contains database integration/concurrency tests. `compose.yaml` starts local MongoDB.
+The first test run downloads a MongoDB binary. Tests do not use your configured application database.
 
-Authentication endpoints run inside Next.js as required by the PDF; Express owns the library API. JWTs carry user/session IDs. Express reads current identity from MongoDB. Sessions last seven days; JWTs last fifteen minutes. The client obtains tokens per protected API request and does not persist them in localStorage.
+## Optional Services
 
-`npm run db:down` stops MongoDB while preserving its named volume. The local database binds only to loopback and has no authentication; use an authenticated database, HTTPS and real origins for deployment. This archive excludes secrets, dependencies, build output and test binaries.
-
-**Publishing:** no deployment, live URL, repository or Git history is claimed. Supply real URLs and meaningful commits after publishing, and replace illustrative footer contacts/social links.
+- Google sign-in requires your own Google OAuth credentials.
+- Book-image uploads require an imgbb key; image URLs can also be supplied.
+- Email verification and password recovery are intentionally disabled for this assignment.
